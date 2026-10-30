@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>平移·轴对称·旋转 小学数学教具</title>
+<style>
+*{box-sizing:border-box;font-family:system-ui,sans-serif}
+body{margin:0;padding:16px;background:#f5f7fa;color:#222}
+.container{max-width:1100px;margin:0 auto}
+h1{text-align:center;font-size:22px;margin-bottom:12px}
+.panel{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+button{padding:8px 14px;border:none;border-radius:6px;background:#2b78e4;color:#fff;font-size:15px;cursor:pointer}
+button.gray{background:#888}
+button.green{background:#28a745}
+button.orange{background:#f08832}
+input[type="number"]{width:60px;padding:6px;border:1px solid #ccc;border-radius:4px}
+label{font-size:14px;margin:0 4px}
+canvas{border:2px solid #333;background:#fff;border-radius:6px;display:block;margin:0 auto}
+.tip{font-size:14px;color:#555;text-align:center;margin:8px 0}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>平移、轴对称、旋转 图形变换演示器</h1>
+<div class="panel">
+  <button id="btnAxis">模式：轴对称</button>
+  <button id="btnTranslate">模式：平移</button>
+  <button id="btnRotate">模式：旋转</button>
+  <button id="btnClear" class="gray">清空图形</button>
+  <button id="btnReset" class="gray">重置画布</button>
+  <button id="btnPlay" class="green">播放动画</button>
+  <div id="cfgAxis">
+    <label>对称轴 x=</label>
+    <input type="number" id="axisX" value="5" min="0" max="12">
+  </div>
+  <div id="cfgTranslate" style="display:none">
+    <label>向右：</label><input type="number" id="dx" value="3">
+    <label>向上：</label><input type="number" id="dy" value="2">
+  </div>
+  <div id="cfgRotate" style="display:none">
+    <label>旋转角度°</label>
+    <input type="number" id="rotDeg" value="90">
+    <label>中心(x,y)</label>
+    <input type="number" id="rotCx" value="5">
+    <input type="number" id="rotCy" value="5">
+  </div>
+</div>
+<div class="tip">操作：点击方格上的格点，依次连线画出多边形；画完后切换变换模式，点【播放动画】</div>
+<canvas id="cv" width="720" height="720"></canvas>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const gridSize = 60;    // 每个格子像素大小
+const gridN = 12;        // 网格行列数 0~12
+let mode = 'axis';       // axis / translate / rotate
+let points = [];         // 用户绘制的原始顶点 [{x,y}]
+let animPoints = [];     // 动画插值点
+let animT = 0;
+let animRunning = false;
+
+// 控件
+const btnAxis = document.getElementById('btnAxis');
+const btnTranslate = document.getElementById('btnTranslate');
+const btnRotate = document.getElementById('btnRotate');
+const btnClear = document.getElementById('btnClear');
+const btnReset = document.getElementById('btnReset');
+const btnPlay = document.getElementById('btnPlay');
+const cfgAxis = document.getElementById('cfgAxis');
+const cfgTranslate = document.getElementById('cfgTranslate');
+const cfgRotate = document.getElementById('cfgRotate');
+const axisXInput = document.getElementById('axisX');
+const dxInput = document.getElementById('dx');
+const dyInput = document.getElementById('dy');
+const rotDegInput = document.getElementById('rotDeg');
+const rotCxInput = document.getElementById('rotCx');
+const rotCyInput = document.getElementById('rotCy');
+
+// 切换模式
+function setMode(m){
+  mode = m;
+  cfgAxis.style.display = m==='axis'?'block':'none';
+  cfgTranslate.style.display = m==='translate'?'block':'none';
+  cfgRotate.style.display = m==='rotate'?'block':'none';
+  draw();
+}
+btnAxis.onclick = ()=>setMode('axis');
+btnTranslate.onclick = ()=>setMode('translate');
+btnRotate.onclick = ()=>setMode('rotate');
+
+// 清空图形
+btnClear.onclick = ()=>{
+  points = []; animRunning=false; animT=0; draw();
+};
+// 重置全部
+btnReset.onclick = ()=>{
+  points = []; animRunning=false; animT=0;
+  axisXInput.value=5;dxInput.value=3;dyInput.value=2;rotDegInput.value=90;rotCxInput.value=5;rotCyInput.value=5;
+  draw();
+};
+btnPlay.onclick = ()=>{
+  if(points.length<2) return alert('请先点击格点画出图形！');
+  animT=0; animRunning=true;
+  requestAnimationFrame(animate);
+}
+
+// 画布坐标转网格坐标（就近吸附格点）
+function getGridPos(e){
+  const r = cv.getBoundingClientRect();
+  const px = e.clientX - r.left;
+  const py = e.clientY - r.top;
+  const gx = Math.round(px / gridSize);
+  const gy = Math.round(py / gridSize);
+  return {x:gx,y:gy};
+}
+cv.onclick = (e)=>{
+  if(animRunning) return;
+  const p = getGridPos(e);
+  points.push(p);
+  draw();
+}
+
+// 绘制网格、格点、线条
+function drawGrid(){
+  ctx.strokeStyle="#ddd";
+  ctx.lineWidth=1;
+  for(let i=0;i<=gridN;i++){
+    ctx.beginPath();
+    ctx.moveTo(i*gridSize,0); ctx.lineTo(i*gridSize,gridN*gridSize); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0,i*gridSize); ctx.lineTo(gridN*gridSize,i*gridSize); ctx.stroke();
+  }
+  // 画格点小圆点
+  ctx.fillStyle="#666";
+  for(let i=0;i<=gridN;i++){
+    for(let j=0;j<=gridN;j++){
+      ctx.beginPath();
+      ctx.arc(i*gridSize,j*gridSize,3,0,Math.PI*2); ctx.fill();
+    }
+  }
+}
+// 绘制多边形
+function drawPolygon(pts,color="#2b78e4"){
+  if(pts.length<2) return;
+  ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=3;
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x*gridSize, pts[0].y*gridSize);
+  for(let p of pts) ctx.lineTo(p.x*gridSize, p.y*gridSize);
+  ctx.closePath();
+  ctx.stroke();
+  // 顶点
+  for(let p of pts){
+    ctx.beginPath();
+    ctx.arc(p.x*gridSize,p.y*gridSize,5,0,Math.PI*2); ctx.fill();
+  }
+}
+
+// 轴对称变换
+function axisTransform(pts, t, axisX){
+  return pts.map(p=>{
+    const mx = axisX;
+    const finalX = mx + (mx - p.x);
+    return {
+      x: p.x + (finalX - p.x)*t,
+      y: p.y
+    }
+  })
+}
+// 平移变换
+function translateTransform(pts, t, dx, dy){
+  return pts.map(p=>({
+    x:p.x + dx*t,
+    y:p.y + dy*t
+  }))
+}
+// 旋转变换
+function rotateTransform(pts, t, deg, cx, cy){
+  const rad0 = 0;
+  const rad1 = deg * Math.PI / 180;
+  const rad = rad0 + (rad1 - rad0)*t;
+  return pts.map(p=>{
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const nx = cx + dx*Math.cos(rad) - dy*Math.sin(rad);
+    const ny = cy + dx*Math.sin(rad) + dy*Math.cos(rad);
+    return {x:nx,y:ny}
+  })
+}
+
+function draw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  drawGrid();
+  // 画对称轴
+  if(mode==='axis'){
+    const ax = Number(axisXInput.value);
+    ctx.strokeStyle="#f08832"; ctx.lineWidth=2; ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    ctx.moveTo(ax*gridSize,0); ctx.lineTo(ax*gridSize,gridN*gridSize); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // 原始图形
+  drawPolygon(points,"#2b78e4");
+  // 动画图形
+  if(animRunning && animPoints.length){
+    drawPolygon(animPoints,"#f03060");
+  }
+}
+function animate(){
+  animT += 0.015;
+  if(animT>1) animT=1;
+  const t = animT;
+  if(mode==='axis'){
+    animPoints = axisTransform(points,t,Number(axisXInput.value));
+  }else if(mode==='translate'){
+    animPoints = translateTransform(points,t,Number(dxInput.value),Number(dyInput.value));
+  }else if(mode==='rotate'){
+    animPoints = rotateTransform(points,t,Number(rotDegInput.value),Number(rotCxInput.value),Number(rotCyInput.value));
+  }
+  draw();
+  if(animT<1){
+    requestAnimationFrame(animate);
+  }else{
+    animRunning=false;
+  }
+}
+draw();
+</script>
+</body>
+</html>
