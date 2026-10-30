@@ -46,7 +46,7 @@ canvas{border:2px solid #333;background:#fff;border-radius:6px;display:block;mar
     <input type="number" id="rotCy" value="5">
   </div>
 </div>
-<div class="tip">操作：点击方格上的格点，依次连线画出多边形；画完后切换变换模式，点【播放动画】</div>
+<div class="tip">操作：点击格点，按点击顺序依次连线，不会自动闭合；画完切换变换模式，点【播放动画】</div>
 <canvas id="cv" width="720" height="720"></canvas>
 </div>
 
@@ -101,7 +101,7 @@ btnReset.onclick = ()=>{
   draw();
 };
 btnPlay.onclick = ()=>{
-  if(points.length<2) return alert('请先点击格点画出图形！');
+  if(points.length<2) return alert('请至少点击2个格点画出线条！');
   animT=0; animRunning=true;
   requestAnimationFrame(animate);
 }
@@ -122,7 +122,7 @@ cv.onclick = (e)=>{
   draw();
 }
 
-// 绘制网格、格点、线条
+// 绘制网格、格点
 function drawGrid(){
   ctx.strokeStyle="#ddd";
   ctx.lineWidth=1;
@@ -141,14 +141,13 @@ function drawGrid(){
     }
   }
 }
-// 绘制多边形
-function drawPolygon(pts,color="#2b78e4"){
+// 按顺序连线，**不自动闭合**
+function drawLineStrip(pts,color="#2b78e4"){
   if(pts.length<2) return;
   ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=3;
   ctx.beginPath();
   ctx.moveTo(pts[0].x*gridSize, pts[0].y*gridSize);
   for(let p of pts) ctx.lineTo(p.x*gridSize, p.y*gridSize);
-  ctx.closePath();
   ctx.stroke();
   // 顶点
   for(let p of pts){
@@ -200,11 +199,11 @@ function draw(){
     ctx.moveTo(ax*gridSize,0); ctx.lineTo(ax*gridSize,gridN*gridSize); ctx.stroke();
     ctx.setLineDash([]);
   }
-  // 原始图形
-  drawPolygon(points,"#2b78e4");
-  // 动画图形
+  // 原始线条
+  drawLineStrip(points,"#2b78e4");
+  // 动画线条
   if(animRunning && animPoints.length){
-    drawPolygon(animPoints,"#f03060");
+    drawLineStrip(animPoints,"#f03060");
   }
 }
 function animate(){
